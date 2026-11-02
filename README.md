@@ -1,10 +1,6 @@
-<<<<<<< Updated upstream
-**Kafka** and a **fraud watchlist of JSON files** (via Auto Loader), processes them through a medallion architecture (bronze → silver → gold), detects suspicious activity, and sends **real-time email alerts** — all surfaced on a fraud KPIs dashboard.
-=======
 # FinGuard — Real-Time Fraud Detection Pipeline
 
 FinGuard is an end-to-end, streaming fraud detection platform built on Databricks. It ingests live card **transactions from Kafka** and a **fraud watchlist of JSON files** (via Auto Loader), processes them through a medallion architecture (bronze → silver → gold), detects suspicious activity, and sends **real-time email alerts** — all surfaced on a fraud KPIs dashboard.
->>>>>>> Stashed changes
 
 ## Architecture
 
@@ -76,8 +72,4 @@ The included dashboard tracks the fraud posture in real time:
 
 ## Tech stack
 
-<<<<<<< Updated upstream
 Databricks · Lakeflow Spark Declarative Pipelines (SDP) · Spark Structured Streaming · Kafka · Auto Loader · Unity Catalog · Gmail SMTP · AI/BI Dashboards
-=======
-Databricks · Lakeflow Spark Declarative Pipelines (SDP) · Spark Structured Streaming · Kafka · Auto Loader · Unity Catalog · Gmail SMTP · AI/BI Dashboards
->>>>>>> Stashed changes

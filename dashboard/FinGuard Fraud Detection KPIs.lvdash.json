@@ -1,0 +1,1208 @@
+{
+  "datasets": [
+    {
+      "name": "latest_alerts",
+      "displayName": "Latest Fraud Alerts",
+      "queryLines": [
+        "SELECT\n",
+        "  alert_id,\n",
+        "  transaction_timestamp,\n",
+        "  customer_name,\n",
+        "  merchant_name,\n",
+        "  merchant_category,\n",
+        "  amount,\n",
+        "  currency,\n",
+        "  transaction_country,\n",
+        "  risk_level,\n",
+        "  reason_code\n",
+        "FROM\n",
+        "  finguard.gold.fraud_card_alert\n",
+        "QUALIFY\n",
+        "  ROW_NUMBER() OVER (PARTITION BY alert_id ORDER BY transaction_timestamp DESC) = 1\n",
+        "ORDER BY\n",
+        "  transaction_timestamp DESC\n",
+        "LIMIT 20"
+      ]
+    },
+    {
+      "name": "daily_trend",
+      "displayName": "Daily Txn vs Alerts",
+      "queryLines": [
+        "WITH alerts AS (\n",
+        "  SELECT\n",
+        "    to_date(transaction_timestamp) d,\n",
+        "    COUNT(DISTINCT alert_id) alert_count,\n",
+        "    ROUND(SUM(amount), 0) fraud_amount\n",
+        "  FROM\n",
+        "    finguard.gold.fraud_card_alert\n",
+        "  GROUP BY\n",
+        "    1\n",
+        "),\n",
+        "txns AS (\n",
+        "  SELECT\n",
+        "    to_date(to_timestamp(transaction_timestamp)) d,\n",
+        "    COUNT(*) txn_count,\n",
+        "    ROUND(SUM(amount), 0) txn_amount\n",
+        "  FROM\n",
+        "    finguard.silver.transactions\n",
+        "  GROUP BY\n",
+        "    1\n",
+        ")\n",
+        "SELECT\n",
+        "  t.d,\n",
+        "  t.txn_count,\n",
+        "  t.txn_amount,\n",
+        "  COALESCE(a.alert_count, 0) alert_count,\n",
+        "  COALESCE(a.fraud_amount, 0) fraud_amount\n",
+        "FROM\n",
+        "  txns t\n",
+        "    LEFT JOIN alerts a\n",
+        "      ON t.d = a.d\n",
+        "ORDER BY\n",
+        "  t.d"
+      ]
+    },
+    {
+      "name": "alerts_by_risk_level",
+      "displayName": "Alerts by Risk Level",
+      "queryLines": [
+        "SELECT\n",
+        "  risk_level,\n",
+        "  COUNT(DISTINCT alert_id) alert_count,\n",
+        "  ROUND(SUM(amount), 0) fraud_amount\n",
+        "FROM\n",
+        "  finguard.gold.fraud_card_alert\n",
+        "GROUP BY\n",
+        "  1\n",
+        "ORDER BY\n",
+        "  CASE risk_level\n",
+        "    WHEN 'CRITICAL' THEN 1\n",
+        "    WHEN 'HIGH' THEN 2\n",
+        "    WHEN 'MEDIUM' THEN 3\n",
+        "    ELSE 4\n",
+        "  END"
+      ]
+    },
+    {
+      "name": "kpi_totals",
+      "displayName": "KPI Totals",
+      "queryLines": [
+        "SELECT\n",
+        "  (\n",
+        "    SELECT\n",
+        "      COUNT(*)\n",
+        "    FROM\n",
+        "      finguard.silver.transactions\n",
+        "  ) total_transactions,\n",
+        "  (\n",
+        "    SELECT\n",
+        "      ROUND(SUM(amount) / 1000000, 2)\n",
+        "    FROM\n",
+        "      finguard.silver.transactions\n",
+        "  ) total_volume_m,\n",
+        "  (\n",
+        "    SELECT\n",
+        "      COUNT(DISTINCT alert_id)\n",
+        "    FROM\n",
+        "      finguard.gold.fraud_card_alert\n",
+        "  ) fraud_alerts,\n",
+        "  (\n",
+        "    SELECT\n",
+        "      ROUND(\n",
+        "        100.0\n",
+        "          * COUNT(DISTINCT alert_id)\n",
+        "          / (\n",
+        "            SELECT\n",
+        "              COUNT(*)\n",
+        "            FROM\n",
+        "              finguard.silver.transactions\n",
+        "          ),\n",
+        "        2\n",
+        "      )\n",
+        "    FROM\n",
+        "      finguard.gold.fraud_card_alert\n",
+        "  ) fraud_rate_pct,\n",
+        "  (\n",
+        "    SELECT\n",
+        "      ROUND(SUM(amount) / 1000000, 2)\n",
+        "    FROM\n",
+        "      finguard.gold.fraud_card_alert\n",
+        "  ) flagged_amount_m,\n",
+        "  (\n",
+        "    SELECT\n",
+        "      COUNT(*)\n",
+        "    FROM\n",
+        "      finguard.gold.high_value_transactions_alert\n",
+        "  ) high_value_alerts"
+      ]
+    },
+    {
+      "name": "top_merchants",
+      "displayName": "Top Merchants by Fraud",
+      "queryLines": [
+        "SELECT\n",
+        "  merchant_name,\n",
+        "  merchant_category,\n",
+        "  COUNT(DISTINCT alert_id) alert_count,\n",
+        "  ROUND(SUM(amount), 0) fraud_amount\n",
+        "FROM\n",
+        "  finguard.gold.fraud_card_alert\n",
+        "GROUP BY\n",
+        "  1,\n",
+        "  2\n",
+        "ORDER BY\n",
+        "  fraud_amount DESC\n",
+        "LIMIT 10"
+      ]
+    },
+    {
+      "name": "hourly_alerts",
+      "displayName": "Hourly Fraud Alerts",
+      "queryLines": [
+        "SELECT\n",
+        "  hour(transaction_timestamp) AS hr,\n",
+        "  COUNT(DISTINCT alert_id) alert_count\n",
+        "FROM\n",
+        "  finguard.gold.fraud_card_alert\n",
+        "GROUP BY\n",
+        "  1\n",
+        "ORDER BY\n",
+        "  1"
+      ]
+    },
+    {
+      "name": "alerts_by_reason_code",
+      "displayName": "Alerts by Reason Code",
+      "queryLines": [
+        "SELECT\n",
+        "  reason_code,\n",
+        "  COUNT(DISTINCT alert_id) alert_count,\n",
+        "  ROUND(SUM(amount), 0) fraud_amount\n",
+        "FROM\n",
+        "  finguard.gold.fraud_card_alert\n",
+        "GROUP BY\n",
+        "  1\n",
+        "ORDER BY\n",
+        "  alert_count DESC"
+      ]
+    },
+    {
+      "name": "top_locations",
+      "displayName": "Top Locations by Fraud",
+      "queryLines": [
+        "SELECT\n",
+        "  transaction_country,\n",
+        "  transaction_city,\n",
+        "  COUNT(DISTINCT alert_id) alert_count,\n",
+        "  ROUND(SUM(amount), 0) fraud_amount\n",
+        "FROM\n",
+        "  finguard.gold.fraud_card_alert\n",
+        "GROUP BY\n",
+        "  1,\n",
+        "  2\n",
+        "ORDER BY\n",
+        "  fraud_amount DESC\n",
+        "LIMIT 10"
+      ]
+    },
+    {
+      "name": "alerts_by_merchant_category",
+      "displayName": "Alerts by Merchant Category",
+      "queryLines": [
+        "SELECT\n",
+        "  merchant_category,\n",
+        "  COUNT(DISTINCT alert_id) alert_count,\n",
+        "  ROUND(SUM(amount), 0) fraud_amount\n",
+        "FROM\n",
+        "  finguard.gold.fraud_card_alert\n",
+        "GROUP BY\n",
+        "  1\n",
+        "ORDER BY\n",
+        "  fraud_amount DESC"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "00ef7070",
+      "displayName": "Page 1",
+      "layout": [
+        {
+          "widget": {
+            "name": "dashboard_title",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# FinGuard Fraud Detection KPIs\n",
+                "Fraud detection monitoring — transactions, alerts, merchants and locations. Amounts in INR."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_transactions",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "total_transactions",
+                      "expression": "`total_transactions`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Transactions"
+              },
+              "sparkChart": {
+                "hide": true
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_transactions",
+                  "displayName": "Total Transactions"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_volume",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "total_volume_m",
+                      "expression": "`total_volume_m`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Volume (₹M)"
+              },
+              "sparkChart": {
+                "hide": true
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "total_volume_m",
+                  "displayName": "Total Volume (₹M)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_fraud_alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "fraud_alerts",
+                      "expression": "`fraud_alerts`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Fraud Alerts (Distinct)"
+              },
+              "sparkChart": {
+                "hide": true
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "fraud_alerts",
+                  "displayName": "Fraud Alerts (Distinct)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_fraud_rate",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "fraud_rate_pct",
+                      "expression": "`fraud_rate_pct`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Fraud Rate (%)"
+              },
+              "sparkChart": {
+                "hide": true
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "fraud_rate_pct",
+                  "displayName": "Fraud Rate (%)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_flagged_amount",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "flagged_amount_m",
+                      "expression": "`flagged_amount_m`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Flagged Amount (₹M)"
+              },
+              "sparkChart": {
+                "hide": true
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "flagged_amount_m",
+                  "displayName": "Flagged Amount (₹M)"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_high_value_alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "kpi_totals",
+                  "fields": [
+                    {
+                      "name": "high_value_alerts",
+                      "expression": "`high_value_alerts`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "High-Value Alerts"
+              },
+              "sparkChart": {
+                "hide": true
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "high_value_alerts",
+                  "displayName": "High-Value Alerts"
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 2,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "daily_trend",
+            "queries": [
+              {
+                "name": "combo_primary_1",
+                "query": {
+                  "datasetName": "daily_trend",
+                  "fields": [
+                    {
+                      "name": "d",
+                      "expression": "`d`"
+                    },
+                    {
+                      "name": "txn_count",
+                      "expression": "`txn_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              },
+              {
+                "name": "combo_secondary_1",
+                "query": {
+                  "datasetName": "daily_trend",
+                  "fields": [
+                    {
+                      "name": "d",
+                      "expression": "`d`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "title": {
+                  "value": "Daily Transactions vs Fraud Alerts",
+                  "fields": []
+                },
+                "showTitle": true
+              },
+              "widgetType": "combo",
+              "encodings": {
+                "x": {
+                  "fieldName": "d",
+                  "displayName": "Date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "primary": {
+                    "layers": [
+                      {
+                        "visual": "bar",
+                        "encodings": {
+                          "value": {
+                            "fieldName": "txn_count",
+                            "displayName": "Transactions"
+                          }
+                        },
+                        "queryName": "combo_primary_1"
+                      }
+                    ],
+                    "scale": {
+                      "type": "quantitative"
+                    }
+                  },
+                  "secondary": {
+                    "layers": [
+                      {
+                        "visual": "line",
+                        "encodings": {
+                          "value": {
+                            "fieldName": "alert_count",
+                            "displayName": "Fraud Alerts"
+                          }
+                        },
+                        "queryName": "combo_secondary_1"
+                      }
+                    ],
+                    "scale": {
+                      "type": "quantitative"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 5,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "alerts_by_risk_level",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "alerts_by_risk_level",
+                  "fields": [
+                    {
+                      "name": "risk_level",
+                      "expression": "`risk_level`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Alerts by Risk Level",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "risk_level",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "CRITICAL",
+                        "HIGH",
+                        "MEDIUM",
+                        "LOW"
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "alert_count",
+                  "displayName": "Alerts",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "risk_level",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 11,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "alerts_by_merchant_category",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "alerts_by_merchant_category",
+                  "fields": [
+                    {
+                      "name": "merchant_category",
+                      "expression": "`merchant_category`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Alerts by Merchant Category",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "merchant_category",
+                  "scale": {
+                    "categorySize": {
+                      "number": 12,
+                      "type": "number-of-categories"
+                    },
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "Restaurant",
+                        "Shopping",
+                        "Pharmacy",
+                        "Fuel",
+                        "Grocery",
+                        "Entertainment",
+                        "Travel"
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "alert_count",
+                  "displayName": "Alerts",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 11,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "alerts_by_reason_code",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "alerts_by_reason_code",
+                  "fields": [
+                    {
+                      "name": "reason_code",
+                      "expression": "`reason_code`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Alerts by Reason Code",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "reason_code",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "number": 10,
+                      "type": "number-of-categories"
+                    },
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        "ACCOUNT_TAKEOVER",
+                        "PHISHING",
+                        "MONEY_LAUNDERING",
+                        "TEST_TRANSACTION",
+                        "STOLEN_CARD",
+                        "LOST_CARD",
+                        "VELOCITY_FRAUD",
+                        "BLACKLISTED_MERCHANT",
+                        "SUSPICIOUS_ACTIVITY",
+                        "COMPROMISED_DEVICE"
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "alert_count",
+                  "displayName": "Alerts",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 11,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "hourly_alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "hourly_alerts",
+                  "fields": [
+                    {
+                      "name": "hr",
+                      "expression": "`hr`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Hourly Fraud Alerts",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "hr",
+                  "displayName": "Hour of Day",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "custom-order",
+                      "orderedValues": [
+                        6,
+                        7,
+                        10,
+                        13,
+                        14
+                      ]
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "alert_count",
+                  "displayName": "Alerts",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 17,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top_merchants",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_merchants",
+                  "fields": [
+                    {
+                      "name": "merchant_name",
+                      "expression": "`merchant_name`"
+                    },
+                    {
+                      "name": "merchant_category",
+                      "expression": "`merchant_category`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    },
+                    {
+                      "name": "fraud_amount",
+                      "expression": "`fraud_amount`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top Merchants by Fraud Amount"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "merchant_name",
+                    "displayName": "Merchant"
+                  },
+                  {
+                    "fieldName": "merchant_category",
+                    "displayName": "Category"
+                  },
+                  {
+                    "fieldName": "alert_count",
+                    "contentAlignment": "right",
+                    "headerAlignment": "right"
+                  },
+                  {
+                    "fieldName": "fraud_amount",
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "compact",
+                      "currencyCode": "INR",
+                      "type": "number-currency"
+                    },
+                    "headerAlignment": "right"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 17,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "top_locations",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "top_locations",
+                  "fields": [
+                    {
+                      "name": "transaction_country",
+                      "expression": "`transaction_country`"
+                    },
+                    {
+                      "name": "transaction_city",
+                      "expression": "`transaction_city`"
+                    },
+                    {
+                      "name": "alert_count",
+                      "expression": "`alert_count`"
+                    },
+                    {
+                      "name": "fraud_amount",
+                      "expression": "`fraud_amount`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top Locations by Fraud Amount"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "transaction_country",
+                    "displayName": "Country"
+                  },
+                  {
+                    "fieldName": "transaction_city",
+                    "displayName": "City"
+                  },
+                  {
+                    "fieldName": "alert_count",
+                    "contentAlignment": "right",
+                    "headerAlignment": "right"
+                  },
+                  {
+                    "fieldName": "fraud_amount",
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "compact",
+                      "currencyCode": "INR",
+                      "type": "number-currency"
+                    },
+                    "headerAlignment": "right"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 23,
+            "width": 5,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "latest_alerts",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "latest_alerts",
+                  "fields": [
+                    {
+                      "name": "alert_id",
+                      "expression": "`alert_id`"
+                    },
+                    {
+                      "name": "transaction_timestamp",
+                      "expression": "`transaction_timestamp`"
+                    },
+                    {
+                      "name": "customer_name",
+                      "expression": "`customer_name`"
+                    },
+                    {
+                      "name": "merchant_name",
+                      "expression": "`merchant_name`"
+                    },
+                    {
+                      "name": "merchant_category",
+                      "expression": "`merchant_category`"
+                    },
+                    {
+                      "name": "amount",
+                      "expression": "`amount`"
+                    },
+                    {
+                      "name": "currency",
+                      "expression": "`currency`"
+                    },
+                    {
+                      "name": "transaction_country",
+                      "expression": "`transaction_country`"
+                    },
+                    {
+                      "name": "risk_level",
+                      "expression": "`risk_level`"
+                    },
+                    {
+                      "name": "reason_code",
+                      "expression": "`reason_code`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Latest Fraud Alerts"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "alert_id",
+                    "displayName": "Alert ID"
+                  },
+                  {
+                    "fieldName": "transaction_timestamp",
+                    "displayName": "Timestamp"
+                  },
+                  {
+                    "fieldName": "customer_name",
+                    "displayName": "Customer"
+                  },
+                  {
+                    "fieldName": "merchant_name",
+                    "displayName": "Merchant"
+                  },
+                  {
+                    "fieldName": "merchant_category",
+                    "displayName": "Category"
+                  },
+                  {
+                    "fieldName": "amount",
+                    "contentAlignment": "right",
+                    "format": {
+                      "abbreviation": "compact",
+                      "currencyCode": "INR",
+                      "type": "number-currency"
+                    },
+                    "headerAlignment": "right"
+                  },
+                  {
+                    "fieldName": "currency"
+                  },
+                  {
+                    "fieldName": "transaction_country",
+                    "displayName": "Country"
+                  },
+                  {
+                    "fieldName": "risk_level",
+                    "displayName": "Risk"
+                  },
+                  {
+                    "fieldName": "reason_code",
+                    "displayName": "Reason"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 23,
+            "width": 7,
+            "height": 7
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}
